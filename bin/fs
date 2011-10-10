@@ -47,10 +47,5 @@ Userspace nullfs-alike: mirror the filesystem tree from some point on.
         print "Unexpected error:", sys.exc_info()[0]
         raise
 
-    for site in server.config.sites:
-        if site.mounted():
-            site.unmount()
-
-
 if __name__ == '__main__':
     main()

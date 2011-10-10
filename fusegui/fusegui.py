@@ -1,10 +1,12 @@
 import sys
 import os
+import subprocess
 import ConfigParser
 import re
 import logging
 import logging.handlers
-import subprocess
+import time
+import filesystems
 import time
 
 class FuseGUI(object):
@@ -60,36 +62,37 @@ class Config(object):
 				return site
 
 class Site(object):
-	type = 'sftp'
+	type = 'sshfs'
 	basepath = '~/.fuse/'
 	remote_basepath = ''
 	timeout = None
+	mount_starttime = None
 
 	def __init__(self, name):
 		self.name = name
 		self.host = self.name
 		self.basepath = os.path.expandvars(os.path.expanduser(self.basepath))
 
+		module = self.type
+		cls = self.type[0].upper() + self.type[1:]
+
+		__import__('fusegui.filesystems.' + module)
+		self.filesystem = getattr(getattr(filesystems, module), cls)
+
 	def mounted(self):
-		# Logger.getInstance().error(self.basepath + self.name)
-		# Logger.getInstance().error(os.path.ismount(self.basepath + self.name))
-		return os.path.ismount(self.basepath + self.name)
+		return self.filesystem.ismounted(self)
 
 	def mount(self):
-		"""Load type plugin and use that mount() method"""
-		if not os.path.isdir(self.basepath + self.name):
-			os.mkdir(self.basepath + self.name)
-		args = ['/usr/bin/sshfs', self.host + ':' + self.remote_basepath, 
-								self.basepath + self.name]
-		# Logger.getInstance().error("args: %s" % args)
-		p = subprocess.Popen(args)
-		return p.wait()
+		self.mount_starttime = time.time()
+		return self.filesystem.mount(self)
 
 	def unmount(self):
-		args = ['/bin/fusermount', '-u', '-z',  self.basepath + self.name]
-		p = subprocess.Popen(args)
-		p.wait()
-		os.rmdir(self.basepath + self.name)
+		return self.filesystem.unmount(self)
+
+	def __del__(self):
+		print 'destroying site!!'
+		if self.mounted():
+			self.unmount()
 
 class Logger(object):
     instance = None
@@ -135,3 +138,15 @@ class Logger(object):
 
     def critical(self, msg, *args, **kwargs):
         return self.logger.critical(msg, *args, **kwargs)
+
+class Filesystem(object):
+	@classmethod
+	def ismounted(self, site):
+		return os.path.ismount(site.basepath + site.name)
+
+	@classmethod
+	def unmount(self, site):
+		args = ['/bin/fusermount', '-u', '-z',  site.basepath + site.name]
+		p = subprocess.Popen(args)
+		p.wait()
+		os.rmdir(site.basepath + site.name)

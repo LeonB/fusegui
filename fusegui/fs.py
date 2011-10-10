@@ -210,3 +210,6 @@ class MountDir(Fuse):
 
     # def fsinit(self):
     #     os.chdir(self.root)
+
+    def fsdestroy(self, data = None):
+        del self.config.sites #make sure __del__ is called
