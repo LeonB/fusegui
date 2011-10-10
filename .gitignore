@@ -1,0 +1,7 @@
+*.pyc
+*.swp
+tests/md5
+build/
+dist/
+pysal.egg-info/
+stuff/

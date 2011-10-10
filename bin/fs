@@ -1,0 +1,56 @@
+#!/usr/bin/env python
+
+import fusegui, fusegui.fs
+try:
+    import _find_fuse_parts
+except ImportError:
+    pass
+import fuse
+from fuse import Fuse
+
+def main():
+
+    usage = """
+Userspace nullfs-alike: mirror the filesystem tree from some point on.
+
+""" + Fuse.fusage
+
+    server = fusegui.fs.MountDir(version="%prog " + fuse.__version__,
+                 usage=usage,
+                 dash_s_do='setsingle')
+    server.config = fusegui.Config()
+
+    fusegui.Logger.instance = fusegui.Logger(log_level='error', quiet=False, verbosity=40)
+    server.logger = fusegui.Logger.getInstance()
+
+    # Disable multithreading: if you want to use 	it, protect all method of
+    # XmlFile class with locks, in order to prevent race conditions
+    server.multithreaded = False
+
+    # server.parser.add_option(mountopt="root", metavar="PATH", default='/',
+    #                          help="mirror filesystem from under PATH [default: %default]")
+
+    server.parse(values=server, errex=1)
+    server.fuse_args.mountpoint = server.config.basepath
+    print server.fuse_args.mountpoint
+
+    # try:
+    #     if server.fuse_args.mount_expected():
+    #         os.chdir(server.root)
+    # except OSError:
+    #     print >> sys.stderr, "can't enter root of underlying filesystem"
+    #     sys.exit(1)
+
+    try:
+        server.main()
+    except:
+        print "Unexpected error:", sys.exc_info()[0]
+        raise
+
+    for site in server.config.sites:
+        if site.mounted():
+            site.unmount()
+
+
+if __name__ == '__main__':
+    main()
