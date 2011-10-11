@@ -21,6 +21,11 @@ class Config(object):
 		config = ConfigParser.ConfigParser()
 		config.readfp(open('defaults.cfg'))
 
+		if config.has_section('Global'):
+			for k,v in config.items('Global'):
+				if hasattr(self, k):
+					setattr(self, k, v)
+
 		section_re = re.compile('^Site (.*)$')	
 		for section in config.sections():
 			match = section_re.match(section)
@@ -28,12 +33,8 @@ class Config(object):
 				continue
 
 			site = Site(match.groups(0)[0])
+			site.basepath = self.fuse_mountdir
 			self.sites.append(site)
-		
-		if config.has_section('Global'):
-			for k,v in config.items('Global'):
-				if hasattr(self, k):
-					setattr(self, k, v)
 
 	@property
 	def basepath(self):
@@ -63,7 +64,7 @@ class Config(object):
 
 class Site(object):
 	type = 'sshfs'
-	basepath = '~/.fuse/'
+	basepath = None
 	remote_basepath = ''
 	timeout = None
 	mount_starttime = None
@@ -71,13 +72,22 @@ class Site(object):
 	def __init__(self, name):
 		self.name = name
 		self.host = self.name
-		self.basepath = os.path.expandvars(os.path.expanduser(self.basepath))
 
 		module = self.type
 		cls = self.type[0].upper() + self.type[1:]
 
 		__import__('fusegui.filesystems.' + module)
-		self.filesystem = getattr(getattr(filesystems, module), cls)
+		self.filesystem = getattr(getattr(filesystems, module), cls)()
+
+	@property
+	def basepath(self):
+		return self.__dict__['basepath']
+
+	@basepath.setter
+	def basepath(self, value):
+		if value:
+			value = os.path.expandvars(os.path.expanduser(value))
+		self.__dict__['basepath'] = value
 
 	def mounted(self):
 		return self.filesystem.ismounted(self)
@@ -140,13 +150,22 @@ class Logger(object):
         return self.logger.critical(msg, *args, **kwargs)
 
 class Filesystem(object):
-	@classmethod
 	def ismounted(self, site):
-		return os.path.ismount(site.basepath + site.name)
+		return os.path.ismount(site.basepath + os.sep + site.name)
 
-	@classmethod
+	def mount(self, site):
+		"""Load type plugin and use that mount() method"""
+		self.mkmountpoint(site)
+		args = self.cmd_args(site)
+		p = subprocess.Popen(args)
+		return p.wait()
+
+	def mkmountpoint(self, site):
+		if not os.path.isdir(site.basepath + os.sep + site.name):
+			os.mkdir(site.basepath + os.sep + site.name)
+
 	def unmount(self, site):
-		args = ['/bin/fusermount', '-u', '-z',  site.basepath + site.name]
+		args = ['/bin/fusermount', '-u', '-z',  site.basepath + os.sep + site.name]
 		p = subprocess.Popen(args)
 		p.wait()
-		os.rmdir(site.basepath + site.name)
+		os.rmdir(site.basepath + os.sep + site.name)

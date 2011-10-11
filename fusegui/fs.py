@@ -26,7 +26,7 @@ class MountDir(Fuse):
             if site and not site.mounted() and path == '/%s' % site.name:
                 return os.lstat("./")
             elif site and not site.mounted():
-                if self.logger: self.logger.error("Trying to mount %s" % redir_path)
+                if self.logger: self.logger.error("Trying to mount %s" % site.basepath + os.sep + site.name)
                 p = site.mount()
                 if self.logger: self.logger.error('p: %s' % p)
 
@@ -208,8 +208,12 @@ class MountDir(Fuse):
 
         return os.statvfs(".")
 
-    # def fsinit(self):
-    #     os.chdir(self.root)
+    def fsinit(self):
+        # os.chdir(self.root)
+        if self.logger: self.logger.error("fsinit")
 
     def fsdestroy(self, data = None):
-        del self.config.sites #make sure __del__ is called
+        # del self.config.sites #make sure __del__ is called
+        for site in self.config.sites:
+            if site.mounted():
+                site.unmount()

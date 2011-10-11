@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import fusegui, fusegui.fs
+import os
+import sys
 try:
     import _find_fuse_parts
 except ImportError:
@@ -42,6 +44,8 @@ Userspace nullfs-alike: mirror the filesystem tree from some point on.
     #     sys.exit(1)
 
     try:
+        os.chdir('/home/leon/sites/')
+        server.dirfd = os.open('/home/leon/sites/', os.O_DIRECTORY)
         server.main()
     except:
         print "Unexpected error:", sys.exc_info()[0]

@@ -4,6 +4,14 @@
 		"selected_items":
 		[
 			[
+				"mount_s",
+				"mount_starttime"
+			],
+			[
+				"ism",
+				"ismounted"
+			],
+			[
 				"get",
 				"getInstance"
 			],
@@ -55,7 +63,23 @@
 			"file": "fusegui/fusegui.py",
 			"settings":
 			{
-				"buffer_size": 3815,
+				"buffer_size": 3922,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"contents": "1. Bij aankoop babykamer vanaf € 750.00, gratis box charlie wit.\n     ( box wordt automatisch meegeleverd)\n      http://www.comingkids.nl/nl/thema/18-baby__rondo\n\n2. Bij aankoop van een combi kinderwagen een gratis maxi-cosi cabriofix+universele voetenzak mc *\n http://www.google.nl/imgres?imgurl=http://www.das-tropenhaus.de/Produktbilder/Kategoriebilder/Joolz3.jpg&imgrefurl=http://www.das-tropenhaus.de/Kinderwagen-JOOLZ-DAY&usg=__cTSw9pTbYpdRro1d4kq0aRkKlus=&h=277&w=715&sz=74&hl=nl&start=52&zoom=1&tbnid=9jMcgGqJhdoE4M:&tbnh=76&tbnw=197&ei=MVaTTtCIDIKXOpnhicwN&prev=/search%3Fq%3Djoolz%26hl%3Dnl%26sa%3DX%26imgrefurl%3Dhttp://www.babytjes.nl/babytjesnieuws/%253Fp%253D433%26w%3D388%26h%3D281%26ndsp%3D24%26biw%3D1280%26bih%3D556%26tbs%3Dsimg:CAESEgm4LWAljSE0zCGeFUlScwuL3Q%26tbm%3Disch&itbs=1&iact=rc&dur=260&page=6&ved=1t:429,r:4,s:57&tx=92&ty=40\n\n        Sterretje pop-up zoals het nu ook is.\n      *Bij aankoop van een onderstel, reiswieg en stoeltje ontvangt u gratis een maxi-cosi cabriofix.\n        Deze aktie is geldig op de volgende modellen:\n Joolz Day\n       * Stokke Xplory\n       * Maxi-Cosi Mura 2012\n       * Maxi-Cosi Mura Elea 2012\n       * Quinny Buzz 3 + 4, 2012\n       * Quinny Moodd\n       * Mountain Urban Jungle\n       * Mountain Urban Jungle Duo (1x maxi-cosi)\n       * Mountain Duett (1x maxi-cosi)\n       * \n 3. Quinny Moodd: Comfortabel. Compleet. Vlot.\n     zie afbeelding bij quinny moodd pink passion, is op het moment weer niet zichtbaar en alles staat erin!!!\n \n \n 4. Bij aankoop van een buggy vanaf € 60.00 een gratis voetenzak t.w.v. € 29.95 OP=OP\n     moet nog een paar leuke afbeeldingen zoeken.\n \n \n 5.  4x Topper Maxi-Cosi Black Reflection\n http://www.babyhuiscasita.nl/autostoelen-accessoires/autostoel-0-13-kg/maxi-cosi-cabriofix.html\n       * http://www.babyhuiscasita.nl/autostoelen-accessoires/autostoel-9-18-kg/maxi-cosi-tobi-black-reflection.html\n       * http://www.babyhuiscasita.nl/autostoelen-accessoires/autostoel-9-18-kg/maxi-cosi-axiss-black-reflection.html\n       * http://www.babyhuiscasita.nl/autostoelen-accessoires/autostoel-15-36-kg/maxi-cosi-rodi-xr-op-op.html",
+			"settings":
+			{
+				"buffer_size": 2123,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "fusegui/filesystems/sshfs.py",
+			"settings":
+			{
+				"buffer_size": 409,
 				"line_ending": "Unix"
 			}
 		},
@@ -63,7 +87,7 @@
 			"file": "fusegui/fs.py",
 			"settings":
 			{
-				"buffer_size": 6517,
+				"buffer_size": 6718,
 				"line_ending": "Unix"
 			}
 		},
@@ -71,15 +95,7 @@
 			"file": "bin/fs",
 			"settings":
 			{
-				"buffer_size": 1528,
-				"line_ending": "Unix"
-			}
-		},
-		{
-			"file": "README",
-			"settings":
-			{
-				"buffer_size": 334,
+				"buffer_size": 1435,
 				"line_ending": "Unix"
 			}
 		}
@@ -120,12 +136,14 @@
 	},
 	"file_history":
 	[
+		"/home/leon/Workspaces/fusegui/fusegui/filesystems/__init__.py",
+		"/home/leon/Workspaces/fusegui/fusegui/__init__.py",
+		"/home/leon/Workspaces/fusegui/README",
 		"/home/leon/Workspaces/fusegui/stuff/tester.py",
 		"/home/leon/Workspaces/py-apx/bin/apx",
 		"/home/leon/Workspaces/fusegui/mount_dir.py",
 		"/usr/share/doc/python-fuse/examples/hello.py",
 		"/home/leon/Workspaces/py-apx/apx/apx.py",
-		"/home/leon/Workspaces/fusegui/fusegui/__init__.py",
 		"/home/leon/Workspaces/fusegui/bin/fusegui",
 		"/home/leon/Workspaces/fusegui/bin/fs",
 		"/home/leon/Workspaces/fusegui/fusegui/config.py",
@@ -158,6 +176,8 @@
 		"case_sensitive": false,
 		"find_history":
 		[
+			"^>",
+			"rmdir",
 			"self.logger.",
 			".*",
 			"StdoutFilter\n",
@@ -169,6 +189,7 @@
 		"regex": true,
 		"replace_history":
 		[
+			"",
 			"zzz"
 		],
 		"reverse": false,
@@ -180,7 +201,7 @@
 	"groups":
 	[
 		{
-			"selected": 5,
+			"selected": 2,
 			"sheets":
 			[
 				{
@@ -242,15 +263,15 @@
 					"file": "fusegui/fusegui.py",
 					"settings":
 					{
-						"buffer_size": 3815,
+						"buffer_size": 3922,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								2058,
-								2058
+								2079,
+								2079
 							]
 						],
 						"settings":
@@ -259,53 +280,78 @@
 							"translate_tabs_to_spaces": false
 						},
 						"translation.x": 0.0,
-						"translation.y": 815.0,
+						"translation.y": 882.0,
 						"zoom_level": 1.0
 					},
 					"type": "text"
 				},
 				{
 					"buffer": 3,
-					"file": "fusegui/fs.py",
 					"settings":
 					{
-						"buffer_size": 6517,
+						"buffer_size": 2123,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								1153,
-								1165
+								1207,
+								1207
 							]
 						],
 						"settings":
 						{
-							"syntax": "Packages/Python/Python.tmLanguage",
-							"tab_size": 4,
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 2,
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 624.0,
+						"translation.y": 0.0,
 						"zoom_level": 1.0
 					},
 					"type": "text"
 				},
 				{
 					"buffer": 4,
-					"file": "bin/fs",
+					"file": "fusegui/filesystems/sshfs.py",
 					"settings":
 					{
-						"buffer_size": 1528,
+						"buffer_size": 409,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								1427,
-								1427
+								391,
+								391
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Python/Python.tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				},
+				{
+					"buffer": 5,
+					"file": "fusegui/fs.py",
+					"settings":
+					{
+						"buffer_size": 6718,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								6644,
+								6644
 							]
 						],
 						"settings":
@@ -315,33 +361,35 @@
 							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 14.0,
+						"translation.y": 3024.0,
 						"zoom_level": 1.0
 					},
 					"type": "text"
 				},
 				{
-					"buffer": 5,
-					"file": "README",
+					"buffer": 6,
+					"file": "bin/fs",
 					"settings":
 					{
-						"buffer_size": 334,
+						"buffer_size": 1435,
 						"regions":
 						{
 						},
 						"selection":
 						[
 							[
-								334,
-								334
+								1396,
+								1396
 							]
 						],
 						"settings":
 						{
-							"syntax": "Packages/Text/Plain text.tmLanguage"
+							"syntax": "Packages/Python/Python.tmLanguage",
+							"tab_size": 4,
+							"translate_tabs_to_spaces": true
 						},
 						"translation.x": 0.0,
-						"translation.y": 0.0,
+						"translation.y": 398.0,
 						"zoom_level": 1.0
 					},
 					"type": "text"
