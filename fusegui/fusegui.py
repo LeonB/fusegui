@@ -12,49 +12,115 @@ import time
 class FuseGUI(object):
 	pass
 
-class Config(object):
+class ConfigSection(object):
 	def __init__(self):
-		self.sites = []
-		self.fuse_mountdir = None
-		self.basepath = None
+		self.set_options(self.__class__)
 
-		config = ConfigParser.ConfigParser()
-		config.readfp(open('defaults.cfg'))
+	def set_options(self, cls):
+		if hasattr(cls, 'config_options'):
+			self.config_options = getattr(cls, 'config_options')
+		else:
+			self.config_options = []
 
-		if config.has_section('Global'):
-			for k,v in config.items('Global'):
-				if hasattr(self, k):
-					setattr(self, k, v)
+		if hasattr(cls, 'config_values'):
+			self.config_values = getattr(cls, 'config_values')
+		else:
+			self.config_values = {}
+
+		if hasattr(cls, 'config_parent'):
+			self.config_parent = getattr(cls, 'config_parent')
+		else:
+			self.config_parent = None
+
+	def get(self, key):
+		if key not in self.config_options:
+			return getattr(self, key)
+
+		if key in self.config_values:
+			return self.config_values[key]
+
+		if self.config_parent:
+			return self.config_parent.get(key)
+
+		print 'key %s: zzzzz' % key
+		print self.config_values
+
+	def set(self, key, value):
+		self.config_values[key] = value
+
+	def set_config_parent(self, parent):
+		self.config_parent = parent
+		for config_item in self.config_options:
+			parent.config_options.append(config_item)
+
+class FilesystemConfig(ConfigSection):
+	def __init__(self, type):
+		module = type
+		cls_name = module[:1].upper() + module[1:]
+
+		__import__('fusegui.filesystems.' + module)
+		cls = getattr(getattr(filesystems, module), cls_name)
+		self.set_options(cls)
+
+		
+
+class Config(ConfigSection):
+	config_options = [
+		'basepath'
+	]
+	sites = []
+	filesystems = {}
+
+	def __init__(self):
+		ConfigSection.__init__(self)
+		self.parser = ConfigParser.ConfigParser()
+		self.parser.readfp(open('defaults.cfg'))
+
+		if self.parser.has_section('Global'):
+			for k,v in self.parser.items('Global'):
+				self.set(k, v)
 
 		section_re = re.compile('^Site (.*)$')	
-		for section in config.sections():
+		for section in self.parser.sections():
 			match = section_re.match(section)
 			if not match:
 				continue
 
-			site = Site(match.groups(0)[0])
-			site.basepath = self.fuse_mountdir
+			name = match.groups(0)[0]
+			site = Site()
+			site.name = name
+			site.set_config_parent(self)
+			for k,v in self.parser.items('Site %s' % name):
+				site.set(k, v)
+
+			if site.get('type') not in self.filesystems:
+				fs_config = FilesystemConfig(site.get('type'))
+				fs_config.set_config_parent(self)
+				section_title = 'Filesystem %s' % site.get('type')
+				if self.parser.has_section(section_title):
+					for k,v in self.parser.items(section_title):
+						fs_config.set(k, v)
+				self.filesystems[site.get('type')] = fs_config
+			site.set_config_parent(self.filesystems[site.get('type')])
+
+			for config_option in self.filesystems[site.get('type')].config_options:
+				if config_option not in site.config_options:
+					site.config_options.append(config_option)
+
+			self.filesystems['sshfs'].set('ssh_protocol', 1)
+			site.set('ssh_protocol', 3)
+			print "site.name: %s" % site.get('name')
+			print "site.host: %s" % site.get('host')
+			print "site.type: %s" % site.get('type')
+			print "site.timeout: %s" % site.get('timeout')
+			print "self.basepath: %s" % self.get('basepath')
+			print "site.fuse_mountdir: %s" % site.get('fuse_mountdir')
+			print "filesystem.ssh_protocol: %s" % self.filesystems[site.get('type')].get('ssh_protocol')
+			print "site.ssh_protocol: %s" % site.get('ssh_protocol')
+			import sys
+			sys.exit(12)
+
 			self.sites.append(site)
-
-	@property
-	def basepath(self):
-		return self.__dict__['basepath']
-
-	@basepath.setter
-	def basepath(self, value):
-		if value:
-			value = os.path.expandvars(os.path.expanduser(value))
-		self.__dict__['basepath'] = value
-
-	@property
-	def fuse_mountdir(self):
-		return self.__dict__['fuse_mountdir']
-
-	@fuse_mountdir.setter
-	def fuse_mountdir(self, value):
-		if value:
-			value = os.path.expandvars(os.path.expanduser(value))
-		self.__dict__['fuse_mountdir'] = value
 
 	def get_site(self, site_name):
 		Logger.getInstance().error("site_name: %s" % site_name)
@@ -62,32 +128,46 @@ class Config(object):
 			if site.name == site_name:
 				return site
 
-class Site(object):
-	type = 'sshfs'
-	basepath = None
-	remote_basepath = ''
-	timeout = None
-	mount_starttime = None
+class Filesystem(object):
+	def ismounted(self, site):
+		return os.path.ismount(site.basepath + os.sep + site.name)
 
-	def __init__(self, name):
-		self.name = name
-		self.host = self.name
+	def mount(self, site):
+		"""Load type plugin and use that mount() method"""
+		self.mkmountpoint(site)
+		args = self.cmd_args(site)
+		p = subprocess.Popen(args)
+		return p.wait()
 
-		module = self.type
-		cls = self.type[0].upper() + self.type[1:]
+	def mkmountpoint(self, site):
+		if not os.path.isdir(site.basepath + os.sep + site.name):
+			os.mkdir(site.basepath + os.sep + site.name)
 
-		__import__('fusegui.filesystems.' + module)
-		self.filesystem = getattr(getattr(filesystems, module), cls)()
+	def unmount(self, site):
+		args = ['/bin/fusermount', '-u', '-z',  site.basepath + os.sep + site.name]
+		p = subprocess.Popen(args)
+		p.wait()
+		os.rmdir(site.basepath + os.sep + site.name)
 
-	@property
-	def basepath(self):
-		return self.__dict__['basepath']
+class Site(ConfigSection):
+	config_options = [
+		'type',
+		'timeout',
+		'fuse_mountdir',
+		'host',
+	]
 
-	@basepath.setter
-	def basepath(self, value):
-		if value:
-			value = os.path.expandvars(os.path.expanduser(value))
-		self.__dict__['basepath'] = value
+	# def get_filesystem(self):
+	# 	module = self.get('type')
+	# 	cls = module[:1].upper() + module[1:]
+
+	# 	__import__('fusegui.filesystems.' + module)
+	# 	filesystem = getattr(getattr(filesystems, module), cls)()
+		
+	# 	filesystem.set_config_parent(self.config_parent)
+	# 	for k,v in self.config.config.items('Filesystem %s' % cls.lower()):
+	# 		filesystem.set(k, v)
+	# 	return filesystem
 
 	def mounted(self):
 		return self.filesystem.ismounted(self)
@@ -99,10 +179,10 @@ class Site(object):
 	def unmount(self):
 		return self.filesystem.unmount(self)
 
-	def __del__(self):
-		print 'destroying site!!'
-		if self.mounted():
-			self.unmount()
+	# def __del__(self):
+	# 	# print 'destroying site!!'
+	# 	# if self.mounted():
+	# 	# 	self.unmount()
 
 class Logger(object):
     instance = None
@@ -148,24 +228,3 @@ class Logger(object):
 
     def critical(self, msg, *args, **kwargs):
         return self.logger.critical(msg, *args, **kwargs)
-
-class Filesystem(object):
-	def ismounted(self, site):
-		return os.path.ismount(site.basepath + os.sep + site.name)
-
-	def mount(self, site):
-		"""Load type plugin and use that mount() method"""
-		self.mkmountpoint(site)
-		args = self.cmd_args(site)
-		p = subprocess.Popen(args)
-		return p.wait()
-
-	def mkmountpoint(self, site):
-		if not os.path.isdir(site.basepath + os.sep + site.name):
-			os.mkdir(site.basepath + os.sep + site.name)
-
-	def unmount(self, site):
-		args = ['/bin/fusermount', '-u', '-z',  site.basepath + os.sep + site.name]
-		p = subprocess.Popen(args)
-		p.wait()
-		os.rmdir(site.basepath + os.sep + site.name)
