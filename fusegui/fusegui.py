@@ -16,6 +16,33 @@ class ConfigSection(object):
 	def __init__(self):
 		self.set_options(self.__class__)
 
+	def __getattr__(self, attr):
+		"""_getattr__ only works for stuff not in __dict__"""
+		if attr not in self.config_options:
+			return getattr(object, attr)
+
+		if attr in self.config_values:
+			return self.config_values[attr]
+
+		# if attr == 'host':
+		# 	print '---------------------------------------'
+		# 	print '__class__: %s' % self.__class__
+		# 	print self.config_parent.__class__
+		# 	print 'attr: %s' % (attr in self.config_parent.config_options)
+		# 	print self.config_parent.config_options
+
+		if self.config_parent and attr in self.config_parent.config_options:
+			return getattr(self.config_parent, attr)
+
+		if attr in self.config_options and not self.config_parent:
+			return None
+
+		# print 'key %s: zzzzz' % attr
+		# print self.config_values
+
+		# raise AttributeError("type object '%s' has no attribute '%s'" % (self.__class__.__name__, attr))
+		return getattr(object, attr)
+
 	def set_options(self, cls):
 		if hasattr(cls, 'config_options'):
 			self.config_options = getattr(cls, 'config_options')
@@ -32,21 +59,21 @@ class ConfigSection(object):
 		else:
 			self.config_parent = None
 
-	def get(self, key):
-		if key not in self.config_options:
-			return getattr(self, key)
+	# def get(self, key):
+	# 	if key not in self.config_options:
+	# 		return getattr(self, key)
 
-		if key in self.config_values:
-			return self.config_values[key]
+	# 	if key in self.config_values:
+	# 		return self.config_values[key]
 
-		if self.config_parent:
-			return self.config_parent.get(key)
+	# 	if self.config_parent:
+	# 		return self.config_parent.get(key)
 
-		print 'key %s: zzzzz' % key
-		print self.config_values
+	# 	print 'key %s: zzzzz' % key
+	# 	print self.config_values
 
-	def set(self, key, value):
-		self.config_values[key] = value
+	# def set(self, key, value):
+	# 	self.config_values[key] = value
 
 	def set_config_parent(self, parent):
 		self.config_parent = parent
@@ -55,6 +82,7 @@ class ConfigSection(object):
 
 class FilesystemConfig(ConfigSection):
 	def __init__(self, type):
+		ConfigSection.__init__(self)
 		module = type
 		cls_name = module[:1].upper() + module[1:]
 
@@ -62,14 +90,13 @@ class FilesystemConfig(ConfigSection):
 		cls = getattr(getattr(filesystems, module), cls_name)
 		self.set_options(cls)
 
-		
-
 class Config(ConfigSection):
 	config_options = [
 		'basepath'
 	]
 	sites = []
 	filesystems = {}
+	instance = None
 
 	def __init__(self):
 		ConfigSection.__init__(self)
@@ -78,7 +105,7 @@ class Config(ConfigSection):
 
 		if self.parser.has_section('Global'):
 			for k,v in self.parser.items('Global'):
-				self.set(k, v)
+				setattr(self, k, v)
 
 		section_re = re.compile('^Site (.*)$')	
 		for section in self.parser.sections():
@@ -89,48 +116,53 @@ class Config(ConfigSection):
 			name = match.groups(0)[0]
 			site = Site()
 			site.name = name
+			site.config = self
 			site.set_config_parent(self)
 			for k,v in self.parser.items('Site %s' % name):
-				site.set(k, v)
+				setattr(site, k, v)
 
-			if site.get('type') not in self.filesystems:
-				fs_config = FilesystemConfig(site.get('type'))
+			if site.type not in self.filesystems:
+				fs_config = FilesystemConfig(site.type)
 				fs_config.set_config_parent(self)
-				section_title = 'Filesystem %s' % site.get('type')
+				section_title = 'Filesystem %s' % site.type
 				if self.parser.has_section(section_title):
 					for k,v in self.parser.items(section_title):
-						fs_config.set(k, v)
-				self.filesystems[site.get('type')] = fs_config
-			site.set_config_parent(self.filesystems[site.get('type')])
+						setattr(fs_config, k, v)
+				self.filesystems[site.type] = fs_config
+			site.set_config_parent(self.filesystems[site.type])
 
-			for config_option in self.filesystems[site.get('type')].config_options:
+			for config_option in self.filesystems[site.type].config_options:
 				if config_option not in site.config_options:
 					site.config_options.append(config_option)
 
-			self.filesystems['sshfs'].set('ssh_protocol', 1)
-			site.set('ssh_protocol', 3)
-			print "site.name: %s" % site.get('name')
-			print "site.host: %s" % site.get('host')
-			print "site.type: %s" % site.get('type')
-			print "site.timeout: %s" % site.get('timeout')
-			print "self.basepath: %s" % self.get('basepath')
-			print "site.fuse_mountdir: %s" % site.get('fuse_mountdir')
-			print "filesystem.ssh_protocol: %s" % self.filesystems[site.get('type')].get('ssh_protocol')
-			print "site.ssh_protocol: %s" % site.get('ssh_protocol')
-			import sys
-			sys.exit(12)
+			self.filesystems['sshfs'].ssh_protocol = 1
+			site.ssh_protocol = 3
+			print "site.name: %s" % site.name
+			print "site.host: %s" % site.host
+			print "site.type: %s" % site.type
+			print "site.timeout: %s" % site.timeout
+			print "self.basepath: %s" % self.basepath
+			print "site.fuse_mountdir: %s" % site.fuse_mountdir
+			print "filesystem.ssh_protocol: %s" % self.filesystems[site.type].ssh_protocol
+			print "site.ssh_protocol: %s" % site.ssh_protocol
 
 			self.sites.append(site)
+		import sys
+		sys.exit(12)
+
+	@classmethod
+	def getInstance(cls):
+		return cls.instance
 
 	def get_site(self, site_name):
 		Logger.getInstance().error("site_name: %s" % site_name)
 		for site in self.sites:
-			if site.name == site_name:
+			if site_name == site.name:
 				return site
 
 class Filesystem(object):
 	def ismounted(self, site):
-		return os.path.ismount(site.basepath + os.sep + site.name)
+		return os.path.ismount(site.config.basepath + os.sep + site.name)
 
 	def mount(self, site):
 		"""Load type plugin and use that mount() method"""
@@ -140,14 +172,14 @@ class Filesystem(object):
 		return p.wait()
 
 	def mkmountpoint(self, site):
-		if not os.path.isdir(site.basepath + os.sep + site.name):
-			os.mkdir(site.basepath + os.sep + site.name)
+		if not os.path.isdir(site.config.basepath + os.sep + site.name):
+			os.mkdir(site.config.basepath + os.sep + site.name)
 
 	def unmount(self, site):
-		args = ['/bin/fusermount', '-u', '-z',  site.basepath + os.sep + site.name]
+		args = ['/bin/fusermount', '-u', '-z',  site.config.basepath + os.sep + site.name]
 		p = subprocess.Popen(args)
 		p.wait()
-		os.rmdir(site.basepath + os.sep + site.name)
+		os.rmdir(site.config.basepath + os.sep + site.name)
 
 class Site(ConfigSection):
 	config_options = [
@@ -158,7 +190,7 @@ class Site(ConfigSection):
 	]
 
 	# def get_filesystem(self):
-	# 	module = self.get('type')
+	# 	module = self.type
 	# 	cls = module[:1].upper() + module[1:]
 
 	# 	__import__('fusegui.filesystems.' + module)
@@ -168,6 +200,17 @@ class Site(ConfigSection):
 	# 	for k,v in self.config.config.items('Filesystem %s' % cls.lower()):
 	# 		filesystem.set(k, v)
 	# 	return filesystem
+
+	@property
+	def filesystem(self):
+		if not 'filesystem' in self.__dict__:
+			module = self.type
+			cls = module[:1].upper() + module[1:]
+
+			__import__('fusegui.filesystems.' + module)
+			self.__dict__['filesystem'] = getattr(getattr(filesystems, module), cls)()
+			self.__dict__['filesystem'].config = self.config
+		return self.__dict__['filesystem']
 
 	def mounted(self):
 		return self.filesystem.ismounted(self)
@@ -179,10 +222,10 @@ class Site(ConfigSection):
 	def unmount(self):
 		return self.filesystem.unmount(self)
 
-	# def __del__(self):
-	# 	# print 'destroying site!!'
-	# 	# if self.mounted():
-	# 	# 	self.unmount()
+	def __del__(self):
+		print 'destroying site!!'
+		if self.mounted():
+			self.unmount()
 
 class Logger(object):
     instance = None

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # @todo: make something like _fix_path()?
-# @todo: gnome-keyring integration (password, gnome-keyring, just try (ssh key))
+# @todo: gnome-keyring integration (password, gnome-keyring, just try (ssh key)) + netrc?
 # @todo: timeout (and keep it with site?)
 
 import os, stat, errno
@@ -26,7 +26,7 @@ class MountDir(Fuse):
             if site and not site.mounted() and path == '/%s' % site.name:
                 return os.lstat("./")
             elif site and not site.mounted():
-                if self.logger: self.logger.error("Trying to mount %s" % site.basepath + os.sep + site.name)
+                if self.logger: self.logger.error("Trying to mount %s" % self.config.basepath + os.sep + site.name)
                 p = site.mount()
                 if self.logger: self.logger.error('p: %s' % p)
 

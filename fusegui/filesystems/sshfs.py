@@ -4,9 +4,10 @@ import subprocess
 
 class Sshfs(fusegui.Filesystem):
 	config_options = [
-		'ssh_protocol'
+		'ssh_protocol',
+		'commandline_args'
 	]
 
 	def cmd_args(self, site):
 		return ['/usr/bin/sshfs', site.host + ':' + site.remote_basepath, 
-			site.basepath + os.sep + site.name]
+			site.config.basepath + os.sep + site.name]

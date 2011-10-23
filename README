@@ -2,3 +2,27 @@
 You might want to disable the counting of folders in nautilus: Edit -> Preferences -> Preview and then set "Count number of items" to "Never"
 http://stackoverflow.com/questions/7706781/why-does-nautilus-read-directories-in-advance
 gconftool-2 --type string --set /apps/nautilus/preferences/ show_directory_item_counts never
+
+== MENU ==
+preferences
+sites >
+----------
+favorites?
+
+== Macfusion menu ==
+Quick Mount > SSH/FTP
+Favorites >
+----------
+Preferences
+About MacFusion
+Quit
+
+== Preferences ==
+tabs? (Global, Sites)
+Sites like filezilla has 'em
+
+== @TODO ==
+ - __setattr__ overwegen
+ - *_path os.path.expandvars(os.path.expanduser(value)) ?? en hoe te implementeren
+ - default values?
+ - Hoe om te gaan met host = name??
