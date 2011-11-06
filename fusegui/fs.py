@@ -1,43 +1,62 @@
-#!/usr/bin/env python
-
-# @todo: make something like _fix_path()?
-# @todo: gnome-keyring integration (password, gnome-keyring, just try (ssh key)) + netrc?
-# @todo: timeout (and keep it with site?)
-
 import os, stat, errno
 import fuse
 from fuse import Fuse
+impotr dbus
 
 fuse.fuse_python_api = (0, 2)
 
 class MountDir(Fuse):
+    bus = None
+    # def __getattribute__(self, attr):
+    #     return Fuse.__getattribute__(self, attr)
+
+    def get_real_path(self, path):
+        return self.config.fuse_mountdir + path
+
+    def get_site(self, path):
+        if path[:len(self.config.fuse_mountdir)] != self.config.fuse_mountdir:
+            return 
+
+        if path == self.config.fuse_mountdir + os.sep:
+            return None
+        
+        site_name = path[len(self.config.fuse_mountdir):]
+        site_name = site_name.lstrip(os.path.sep).split(os.path.sep)[0]
+
+        if self.logger: self.logger.debug('site_name: %s' % site_name)
+        dbus_path = '/org/fusegui/sites/%s' % re.sub('[^a-zA-Z0-9]', '_', site.name)
+        if self.logger: self.logger.debug('dbus_path: %s' % dbus_path)
+        return self.config.get_site(site_name)
+
     def getattr(self, path):
         if self.logger: self.logger.error("getattr: %s" % path)
+        path = self.get_real_path(path)
+        if self.logger: self.logger.error('path: %s' % path)
+        site = self.get_site(path)
         
-        if path == '/':
-            return os.lstat("." + path)
+        if not site:
+            if self.logger: self.logger.debug('getattr: no site found for %s' % path)
+            return os.lstat(path)
         else:
-            redir_path = self.config.fuse_mountdir + path
-            if self.logger: self.logger.error("redir_path: %s" % redir_path)
-            site = self.config.get_site(path.lstrip(os.path.sep).split(os.path.sep)[0])
-            if self.logger: self.logger.error('site: %s' % site)
-
-            # als path == '/$site' dan niet getattr'en maar iets anders...?
-            if site and not site.mounted() and path == '/%s' % site.name:
-                return os.lstat("./")
-            elif site and not site.mounted():
+            if site and not site.ismounted() and path == site.basepath:
+                if not os.path.isdir(site.basepath):
+                    os.mkdir(site.basepath)
+                return os.lstat(path)
+            elif site and not site.ismounted():
                 if self.logger: self.logger.error("Trying to mount %s" % self.config.basepath + os.sep + site.name)
                 p = site.mount()
                 if self.logger: self.logger.error('p: %s' % p)
+            else:
+                self.logger.debug('getattr: site already mounted')
 
-            return os.lstat(redir_path)
+            site.update_accesstime()
+            return os.lstat(path)
 
     def readlink(self, path):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-
+        if self.logger: self.logger.error("readlink: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
         return os.readlink(path)
 
     def readdir(self, path, offset):
@@ -48,122 +67,107 @@ class MountDir(Fuse):
                 yield fuse.Direntry(site.name)
         else:
             site = self.config.get_site(path.lstrip(os.path.sep).split(os.path.sep)[0])
-            if site and not site.mounted():
+            if site and not site.ismounted():
                 p = site.mount()
 
             for e in os.listdir(self.config.fuse_mountdir + path):
                 self.logger.error('listdir e: %s' % e)
                 yield fuse.Direntry(e)
 
-    def unlink(self, path): 
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-            
+    def unlink(self, path):
+        if self.logger: self.logger.error("unlink: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
         os.unlink(path)
 
     def rmdir(self, path):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-            
+        if self.logger: self.logger.error("rmdir: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
         os.rmdir(path)
 
-    def symlink(self, path, path1):
-        if path1 == '/':
-            path1 = './'
-        else:
-            path1 = self.config.fuse_mountdir + path
-            
-        os.symlink(path, path1)
+    def symlink(self, path1, path2):
+        if self.logger: self.logger.debug("symlink: %s, %s" % (path1, path2))
+        path1 = self.get_real_path(path1)
+        site1 = self.get_site(path1)
+        if site1: site1.update_accesstime()
+        path2 = self.get_real_path(path2)
+        site2 = self.get_site(path2)
+        if site2: site2.update_accesstime()
+        os.symlink(path1, path2)
 
-    def rename(self, path, path1):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
+    def rename(self, path1, path2):
+        if self.logger: self.logger.debug("rename: %s, %s" % (path1, path2))
+        path1 = self.get_real_path(path1)
+        site1 = self.get_site(path1)
+        if site1: site1.update_accesstime()
+        path2 = self.get_real_path(path2)
+        site2 = self.get_site(path2)
+        if site2: site2.update_accesstime()
+        os.rename(path1, path2)
 
-        if path1 == '/':
-            path1 = './'
-        else:
-            path1 = self.config.fuse_mountdir + path1
-
-        os.rename(path, path1)
-
-    def link(self, path, path1):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-
-        os.link(path, "." + path1)
+    def link(self, path1, path2):
+        if self.logger: self.logger.debug("link: %s, %s" % (path1, path2))
+        path1 = self.get_real_path(path1)
+        site1 = self.get_site(path1)
+        if site1: site1.update_accesstime()
+        path2 = self.get_real_path(path2)
+        site2 = self.get_site(path2)
+        if site2: site2.update_accesstime()
+        os.link(path1, "." + path2)
 
     def chmod(self, path, mode):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-            
+        if self.logger: self.logger.debug("chmod: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
         os.chmod(path, mode)
 
     def chown(self, path, user, group):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-            
+        if self.logger: self.logger.error("chown: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
         os.chown(path, user, group)
 
     def truncate(self, path, len):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-            
+        if self.logger: self.logger.debug("truncate: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
         f = open(path, "a")
         f.truncate(len)
         f.close()
 
     def mknod(self, path, mode, dev):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
+        if self.logger: self.logger.debug("mknod: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
         os.mknod(path, mode, dev)
 
     def mkdir(self, path, mode):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-
+        if self.logger: self.logger.debug("mkdir: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
         os.mkdir(path, mode)
 
     def utime(self, path, times):
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-            
+        if self.logger: self.logger.debug("utime: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
         os.utime(path, times)
 
-#    The following utimens method would do the same as the above utime method.
-#    We can't make it better though as the Python stdlib doesn't know of
-#    subsecond preciseness in acces/modify times.
-#  
-#    def utimens(self, path, ts_acc, ts_mod):
-#      os.utime("." + path, (ts_acc.tv_sec, ts_mod.tv_sec))
-
     def access(self, path, mode):
-        if self.logger: self.logger.error("access: %s" % path)
-
-        if path == '/':
-            path = './'
-        else:
-            path = self.config.fuse_mountdir + path
-
+        if self.logger: self.logger.debug("access: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+    
         if not os.access(path, mode):
             return -errno.EACCES
 
@@ -211,9 +215,10 @@ class MountDir(Fuse):
     def fsinit(self):
         # os.chdir(self.root)
         if self.logger: self.logger.error("fsinit")
+        self.bus = dbus.SessionBus()
 
     def fsdestroy(self, data = None):
         # del self.config.sites #make sure __del__ is called
         for site in self.config.sites:
-            if site.mounted():
+            if site.ismounted():
                 site.unmount()

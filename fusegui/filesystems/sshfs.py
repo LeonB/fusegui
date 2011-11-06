@@ -10,4 +10,4 @@ class Sshfs(fusegui.Filesystem):
 
 	def cmd_args(self, site):
 		return ['/usr/bin/sshfs', site.host + ':' + site.remote_basepath, 
-			site.config.basepath + os.sep + site.name]
+			site.fuse_mountdir + os.sep + site.name]
