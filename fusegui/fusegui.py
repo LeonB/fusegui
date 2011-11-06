@@ -244,6 +244,8 @@ class Site(ConfigSection, gobject.GObject):
 		gobject.GObject.__init__(self)
         __gsignals__ = {
             "accessed": (gobject.SIGNAL_RUN_FIRST, gobject.TYPE_NONE, ()),
+            "mounted": (gobject.SIGNAL_RUN_FIRST, gobject.TYPE_NONE, ()),
+            "unmounted": (gobject.SIGNAL_RUN_FIRST, gobject.TYPE_NONE, ()),
         }
 
 	def update_accesstime(self):
@@ -256,7 +258,7 @@ class Site(ConfigSection, gobject.GObject):
 	def set_timer(self):
 		if self.timer:
 			self.timer.cancel()
-		self.timer = Timer(5.0, self.timed_out)
+		self.timer = Timer(self.timeout*1000, self.timed_out)
 		print self.timer.start()
 
 	def timed_out(self):
@@ -310,17 +312,26 @@ class Site(ConfigSection, gobject.GObject):
 	def basepath(self):
 		return self.fuse_mountdir + os.sep + self.name
 
+	@property
 	def ismounted(self):
-		if not self.filesystem:
-			return False
-		return self.filesystem.ismounted(self)
+		if 'ismounted' not in self.__dict__:
+			self.__dict__['ismounted'] = self.filesystem.ismounted(self)
+		return self.__dict__['ismounted']
 
 	def mount(self):
 		self.mount_starttime = time.time()
-		return self.filesystem.mount(self)
+		if self.filesystem.mount(self):
+			self.__dict__['ismounted'] = True
+			self.emit('mounted')
+			return True
+		return False
 
 	def unmount(self):
-		return self.filesystem.unmount(self)
+		if self.filesystem.unmount(self):
+			self.__dict__['ismounted'] = False
+			self.emit('unmounted')
+			return True
+		return False
 
 	def __del__(self):
 		print 'destroying site!!'

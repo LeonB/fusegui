@@ -1,12 +1,13 @@
 import os, stat, errno
 import fuse
 from fuse import Fuse
-impotr dbus
+import dbusclient
 
 fuse.fuse_python_api = (0, 2)
 
 class MountDir(Fuse):
     bus = None
+    sites = {}
     # def __getattribute__(self, attr):
     #     return Fuse.__getattribute__(self, attr)
 
@@ -24,9 +25,10 @@ class MountDir(Fuse):
         site_name = site_name.lstrip(os.path.sep).split(os.path.sep)[0]
 
         if self.logger: self.logger.debug('site_name: %s' % site_name)
-        dbus_path = '/org/fusegui/sites/%s' % re.sub('[^a-zA-Z0-9]', '_', site.name)
-        if self.logger: self.logger.debug('dbus_path: %s' % dbus_path)
-        return self.config.get_site(site_name)
+
+        if site_name not in self.sites:
+            self.sites[site_name] = dbusclient.Site.get_by_name(site_name, self.bus)
+        return self.sites[site_name]
 
     def getattr(self, path):
         if self.logger: self.logger.error("getattr: %s" % path)
@@ -38,18 +40,18 @@ class MountDir(Fuse):
             if self.logger: self.logger.debug('getattr: no site found for %s' % path)
             return os.lstat(path)
         else:
-            if site and not site.ismounted() and path == site.basepath:
+            if site and not site.ismounted and path == site.basepath:
                 if not os.path.isdir(site.basepath):
                     os.mkdir(site.basepath)
                 return os.lstat(path)
-            elif site and not site.ismounted():
-                if self.logger: self.logger.error("Trying to mount %s" % self.config.basepath + os.sep + site.name)
+            elif site and not site.ismounted:
+                if self.logger: self.logger.error("Trying to mount %s" % site.basepath)
                 p = site.mount()
                 if self.logger: self.logger.error('p: %s' % p)
             else:
                 self.logger.debug('getattr: site already mounted')
 
-            site.update_accesstime()
+            #site.update_accesstime()
             return os.lstat(path)
 
     def readlink(self, path):
@@ -65,14 +67,18 @@ class MountDir(Fuse):
         if path == '/':
             for site in self.config.sites:
                 yield fuse.Direntry(site.name)
-        else:
-            site = self.config.get_site(path.lstrip(os.path.sep).split(os.path.sep)[0])
-            if site and not site.ismounted():
-                p = site.mount()
+            return
 
-            for e in os.listdir(self.config.fuse_mountdir + path):
-                self.logger.error('listdir e: %s' % e)
-                yield fuse.Direntry(e)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if self.logger: self.logger.error("site: %s" % site)
+        if site and not site.ismounted:
+            site.mount()
+
+        if self.logger: self.logger.error("site.basepath: %s" % site.basepath)
+        for e in os.listdir(site.basepath):
+            self.logger.error('listdir e: %s' % e)
+            yield fuse.Direntry(e)
 
     def unlink(self, path):
         if self.logger: self.logger.error("unlink: %s" % path)
@@ -215,10 +221,13 @@ class MountDir(Fuse):
     def fsinit(self):
         # os.chdir(self.root)
         if self.logger: self.logger.error("fsinit")
+        import dbus
+        from dbus.mainloop.glib import DBusGMainLoop
+        DBusGMainLoop(set_as_default=True)
         self.bus = dbus.SessionBus()
 
     def fsdestroy(self, data = None):
         # del self.config.sites #make sure __del__ is called
         for site in self.config.sites:
-            if site.ismounted():
+            if site.ismounted:
                 site.unmount()

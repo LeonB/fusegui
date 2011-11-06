@@ -38,9 +38,13 @@ class Site(DBUSObjectWithProperties):
     def __init__(self, site):
         self.site = site
         self.attributes = site.get_config_options()
+        self.attributes.append('ismounted')
         path = '/org/fusegui/sites/%s' % re.sub('[^a-zA-Z0-9]', '_', site.name)
         bus_name = dbus.service.BusName('org.fusegui', bus=dbus.SessionBus())
         dbus.service.Object.__init__(self, bus_name, path)
+
+        self.site.connect('mounted', self.site_mount_status_changed)
+        self.site.connect('unmounted', self.site_mount_status_changed)
 
     def __getattr__(self, attr):
         if attr in self.attributes:
@@ -48,13 +52,18 @@ class Site(DBUSObjectWithProperties):
 
         return getattr(DBUSObjectWithProperties, attr)
 
+    def site_mount_status_changed(self, site):
+        print 'mount status changed'
+        self.PropertiesChanged('org.fusegui.site',
+            { 'ismounted': site.ismounted }, [])
+
     @dbus.service.method('org.fusegui.site')
     def update_accesstime(self):
         return self.site.update_accesstime()
 
-    @dbus.service.method('org.fusegui.site')
-    def ismounted(self):
-        return self.site.ismounted()
+    # @dbus.service.method('org.fusegui.site')
+    # def ismounted(self):
+    #     return self.site.ismounted()
         
     @dbus.service.method('org.fusegui.site')
     def mount(self):

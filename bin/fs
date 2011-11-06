@@ -22,7 +22,7 @@ Userspace nullfs-alike: mirror the filesystem tree from some point on.
                  dash_s_do='setsingle')
     server.config = fusegui.Config()
 
-    fusegui.Logger.instance = fusegui.Logger(log_level='error', quiet=False, verbosity=40)
+    fusegui.Logger.instance = fusegui.Logger(log_level='debug', quiet=False, verbosity=40)
     server.logger = fusegui.Logger.getInstance()
 
     # Disable multithreading: if you want to use 	it, protect all method of
@@ -34,8 +34,7 @@ Userspace nullfs-alike: mirror the filesystem tree from some point on.
 
     server.parse(values=server, errex=1)
     server.fuse_args.mountpoint = server.config.basepath
-    print server.fuse_args.mountpoint
-
+    
     # try:
     #     if server.fuse_args.mount_expected():
     #         os.chdir(server.root)
@@ -44,8 +43,8 @@ Userspace nullfs-alike: mirror the filesystem tree from some point on.
     #     sys.exit(1)
 
     try:
-        os.chdir('/home/leon/sites/')
-        server.dirfd = os.open('/home/leon/sites/', os.O_DIRECTORY)
+        # os.chdir('/home/leon/sites/')
+        # server.dirfd = os.open('/home/leon/sites/', os.O_DIRECTORY)
         server.main()
     except:
         print "Unexpected error:", sys.exc_info()[0]
