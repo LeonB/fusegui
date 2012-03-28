@@ -3,52 +3,94 @@
 import fusegui, fusegui.fs
 import os
 import sys
-try:
-    import _find_fuse_parts
-except ImportError:
-    pass
-import fuse
-from fuse import Fuse
+import fusegui.utils
+import threading
+import gobject
+import time
+from fuse import FUSE
 
-def main():
+class Main(object):
 
-    usage = """
-Userspace nullfs-alike: mirror the filesystem tree from some point on.
+    def __init__(self):
+        # Create ;pgger amd config instance to pass on throughout the program
+        fusegui.Logger.instance = fusegui.Logger(log_level='debug', quiet=False, verbosity=40)
+        self.logger = fusegui.Logger.getInstance()
+        self.config = fusegui.Config(logger=self.logger)
 
-""" + Fuse.fusage
+        # Create server (custom FS instance)
+        self.server = fusegui.fs.Mountdir()
+        self.server.logger = self.logger
+        self.server.config = self.config
 
-    server = fusegui.fs.MountDir(version="%prog " + fuse.__version__,
-                 usage=usage,
-                 dash_s_do='setsingle')
-    server.config = fusegui.Config()
+        # Create director (dbus service for interacting with the config object/sites)
+        self.director = fusegui.Director()
+        self.director.config = self.config
+        self.director.logger = self.logger
 
-    fusegui.Logger.instance = fusegui.Logger(log_level='debug', quiet=False, verbosity=40)
-    server.logger = fusegui.Logger.getInstance()
+        # Create a Process() object for director and attach callbacks
+        self.p_director = fusegui.utils.Process(target=self.director.run)
+        self.p_director.connect('stopped', self.director_stopped)
+        self.p_director.connect('started', self.print_pid)
+        self.p_director.connect('started', self.director_started)
+        self.director_started = threading.Event()
 
-    # Disable multithreading: if you want to use 	it, protect all method of
-    # XmlFile class with locks, in order to prevent race conditions
-    server.multithreaded = False
+        # Create a Process() object for FS/Server and attach callbacks
+        self.p_fuse = fusegui.utils.Process(target=FUSE, args=(self.server, self.config.basepath,), kwargs={'foreground': True, 'debug': False})
+        # FUSE(self.server, self.config.basepath, foreground=True, debug=False)
+        self.p_fuse.connect('stopped', self.fuse_stopped)
+        self.p_fuse.connect('started', self.print_pid)
+        self.p_fuse.connect('started', self.fuse_started)
+        self.fuse_started = threading.Event()
 
-    # server.parser.add_option(mountopt="root", metavar="PATH", default='/',
-    #                          help="mirror filesystem from under PATH [default: %default]")
+        self.mainloop = gobject.MainLoop()
 
-    server.parse(values=server, errex=1)
-    server.fuse_args.mountpoint = server.config.basepath
-    
-    # try:
-    #     if server.fuse_args.mount_expected():
-    #         os.chdir(server.root)
-    # except OSError:
-    #     print >> sys.stderr, "can't enter root of underlying filesystem"
-    #     sys.exit(1)
+    def print_pid(self, process):
+        print 'process.pid: %s' %process.pid
 
-    try:
-        # os.chdir('/home/leon/sites/')
-        # server.dirfd = os.open('/home/leon/sites/', os.O_DIRECTORY)
-        server.main()
-    except:
-        print "Unexpected error:", sys.exc_info()[0]
-        raise
+    def director_started(self, process):
+        self.director_started.set()
+
+    def fuse_started(self, process):
+        self.director_started.set()
+
+    def director_stopped(self, process):
+        self.logger.error('director_stopped')
+
+    def fuse_stopped(self, process):
+        self.logger.error('fuse_stopped')
+
+    def exit(self):
+        # Emit the stop signal for both processess
+        self.p_director.stop()
+        self.p_fuse.stop()
+
+        # Destroy the Fuse custom FS component
+        self.server.destroy(None)
+
+        # Wait for both processes to end
+        self.p_director.join()
+        self.p_fuse.join()
+
+        sys.exit(0)
+
+    def run(self):
+        """Because I can't get it working with threads, just use processes instead.
+        I'll wonder about IPC later"""
+
+        try:
+            self.p_director.start()
+            while not self.director_started.is_set():
+                # Wait until the director sub, subthread sets a Event()
+                time.sleep(0.1)
+
+            # Now start the fuse process
+            self.p_fuse.start()
+
+            self.mainloop.run()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.exit()
 
 if __name__ == '__main__':
-    main()
+    Main().run()

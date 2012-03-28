@@ -1,15 +1,14 @@
+from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
 import os, stat, errno
-import fuse
-from fuse import Fuse
-import dbusclient
+import fusegui
 
-fuse.fuse_python_api = (0, 2)
+class Mountdir(LoggingMixIn, Operations):
+    logger = None
+    config = None
 
-class MountDir(Fuse):
-    bus = None
-    sites = {}
-    # def __getattribute__(self, attr):
-    #     return Fuse.__getattribute__(self, attr)
+    def _stat_to_dict(self, st):
+        return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
+                    'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
 
     def get_real_path(self, path):
         return self.config.fuse_mountdir + path
@@ -25,12 +24,14 @@ class MountDir(Fuse):
         site_name = site_name.lstrip(os.path.sep).split(os.path.sep)[0]
 
         if self.logger: self.logger.debug('site_name: %s' % site_name)
+        for site in self.config.sites:
+            if site.name == site_name:
+                return site
 
-        if site_name not in self.sites:
-            self.sites[site_name] = dbusclient.Site.get_by_name(site_name, self.bus)
-        return self.sites[site_name]
 
-    def getattr(self, path):
+    ### Start filesystem methodss ###
+
+    def getattr(self, path, fh=None):
         if self.logger: self.logger.error("getattr: %s" % path)
         path = self.get_real_path(path)
         if self.logger: self.logger.error('path: %s' % path)
@@ -38,12 +39,12 @@ class MountDir(Fuse):
         
         if not site:
             if self.logger: self.logger.debug('getattr: no site found for %s' % path)
-            return os.lstat(path)
+            return self._stat_to_dict(os.lstat(path))
         else:
             if site and not site.ismounted and path == site.basepath:
                 if not os.path.isdir(site.basepath):
                     os.mkdir(site.basepath)
-                return os.lstat(path)
+                return self._stat_to_dict(os.lstat(path))
             elif site and not site.ismounted:
                 if self.logger: self.logger.error("Trying to mount %s" % site.basepath)
                 p = site.mount()
@@ -51,8 +52,8 @@ class MountDir(Fuse):
             else:
                 self.logger.debug('getattr: site already mounted')
 
-            #site.update_accesstime()
-            return os.lstat(path)
+            site.update_accesstime()
+            return self._stat_to_dict(os.lstat(path))
 
     def readlink(self, path):
         if self.logger: self.logger.error("readlink: %s" % path)
@@ -64,10 +65,9 @@ class MountDir(Fuse):
     def readdir(self, path, offset):
         if self.logger: self.logger.error("readdir: %s" % path)
 
+        # If not a subdirector: return all sitenames as directory
         if path == '/':
-            for site in self.config.sites:
-                yield fuse.Direntry(site.name)
-            return
+            return ['.', '..'] + map(lambda x: x.name, self.config.sites)
 
         path = self.get_real_path(path)
         site = self.get_site(path)
@@ -78,7 +78,7 @@ class MountDir(Fuse):
         if self.logger: self.logger.error("site.basepath: %s" % site.basepath)
         for e in os.listdir(site.basepath):
             self.logger.error('listdir e: %s' % e)
-            yield fuse.Direntry(e)
+            return os.listdir(path)
 
     def unlink(self, path):
         if self.logger: self.logger.error("unlink: %s" % path)
@@ -211,23 +211,17 @@ class MountDir(Fuse):
             - f_frsize - fundamental size of file blcoks, in bytes
                 [if you have no idea, use the same as blocksize]
             - f_blocks - total number of blocks in the filesystem
-            - f_bfree - number of free blocks
+          - f_bfree - number of free blocks
             - f_files - total number of file inodes
             - f_ffree - nunber of free file inodes
         """
 
         return os.statvfs(".")
 
-    def fsinit(self):
-        # os.chdir(self.root)
-        if self.logger: self.logger.error("fsinit")
-        import dbus
-        from dbus.mainloop.glib import DBusGMainLoop
-        DBusGMainLoop(set_as_default=True)
-        self.bus = dbus.SessionBus()
-
-    def fsdestroy(self, data = None):
-        # del self.config.sites #make sure __del__ is called
+    def __del__(self):
+        if self.logger: self.logger.error("__del__")
+        # Check every site and unmount it if needed
         for site in self.config.sites:
+            if self.logger: self.logger.error('%s mounted: %s' % (site.name, site.ismounted))
             if site.ismounted:
                 site.unmount()

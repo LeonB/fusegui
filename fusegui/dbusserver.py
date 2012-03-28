@@ -53,7 +53,7 @@ class Site(DBUSObjectWithProperties):
         return getattr(DBUSObjectWithProperties, attr)
 
     def site_mount_status_changed(self, site):
-        print 'mount status changed'
+        print 'mount status changed to: %s' % site.ismounted
         self.PropertiesChanged('org.fusegui.site',
             { 'ismounted': site.ismounted }, [])
 

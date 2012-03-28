@@ -15,7 +15,6 @@ class Site(object):
             return None
 
     def __init__(self, site_name, bus):
-        #bus = dbus.SessionBus()
         dbus_path = '/org/fusegui/sites/%s' % re.sub('[^a-zA-Z0-9]', '_', site_name)
         site = bus.get_object('org.fusegui', dbus_path)
 
@@ -23,11 +22,11 @@ class Site(object):
             #self.properties.append(property)
             if v.__class__ == dbus.String:
                 v = v.encode('ascii')
-                print v.__class__
             if v.__class__ == dbus.Int32:
                 v = int(v)
             setattr(self, k, v)
 
+        "Adding signal receiver for %s" % site_name
         bus.add_signal_receiver(self.site_mount_status_changed, 
             dbus_interface=dbus.PROPERTIES_IFACE, 
             signal_name="PropertiesChanged", 
@@ -43,9 +42,10 @@ class Site(object):
 
     #     return object.__getattr__(attr)
 
-    def site_mount_status_changed(self, *args, **keywords):
+    def site_mount_status_changed(self, interface_name, changed_properties,
+                          invalidated_properties):
         print 'site_mount_status_changed!!'
-        print args, keywords
+        self.ismounted = changed_properties['ismounted']
 
     def update_accesstime(self):
         return self.site.update_accesstime()
