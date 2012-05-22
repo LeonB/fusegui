@@ -1,5 +1,5 @@
 import sys
-import os
+import os, stat, errno
 import subprocess
 import ConfigParser
 import re
@@ -10,9 +10,8 @@ import filesystems
 import time
 import copy
 import gobject
-import dbusserver
-from dbus.mainloop.glib import DBusGMainLoop
-from threading import Timer
+import threading
+import fuse
 
 class ConfigSection(object):
     config_options = []
@@ -38,23 +37,12 @@ class ConfigSection(object):
         if attr in self.config_values:
             return self.config_values[attr]
 
-        # if attr == 'host':
-        #   print '---------------------------------------'
-        #   print '__class__: %s' % self.__class__
-        #   print self.config_parent.__class__
-        #   print 'attr: %s' % (attr in self.config_parent.config_options)
-        #   print self.config_parent.config_options
-
         if self.config_parent and attr in self.config_parent.config_options:
             return getattr(self.config_parent, attr)
 
         if attr in self.config_options and not self.config_parent:
             return None
 
-        # print 'key %s: zzzzz' % attr
-        # print self.config_values
-
-        # raise AttributeError("type object '%s' has no attribute '%s'" % (self.__class__.__name__, attr))
         return getattr(object, attr)
 
     def set_options(self, cls):
@@ -72,22 +60,6 @@ class ConfigSection(object):
             self.config_parent = copy.copy(getattr(cls, 'config_parent'))
         else:
             self.config_parent = None
-
-    # def get(self, key):
-    #   if key not in self.config_options:
-    #       return getattr(self, key)
-
-    #   if key in self.config_values:
-    #       return self.config_values[key]
-
-    #   if self.config_parent:
-    #       return self.config_parent.get(key)
-
-    #   print 'key %s: zzzzz' % key
-    #   print self.config_values
-
-    # def set(self, key, value):
-    #   self.config_values[key] = value
 
     def set_config_parent(self, parent):
         self.config_parent = parent
@@ -122,7 +94,7 @@ class Config(ConfigSection):
             for k,v in self.parser.items('Global'):
                 setattr(self, k, v)
 
-        section_re = re.compile('^Site (.*)$')  
+        section_re = re.compile('^Site (.*)$')
         for section in self.parser.sections():
             match = section_re.match(section)
             if not match:
@@ -151,18 +123,6 @@ class Config(ConfigSection):
                 if config_option not in site.config_options:
                     site.config_options.append(config_option)
 
-            # self.filesystems['sshfs'].ssh_protocol = 1
-            # print self.filesystems['sshfs'].ding
-            # site.ssh_protocol = 3
-            # print "site.name: %s" % site.name
-            # print "site.host: %s" % site.host
-            # print "site.type: %s" % site.type
-            # print "site.timeout: %s" % site.timeout
-            # print "self.basepath: %s" % self.basepath
-            # print "site.fuse_mountdir: %s" % site.fuse_mountdir
-            # print "filesystem.ssh_protocol: %s" % self.filesystems[site.type].ssh_protocol
-            # print "site.ssh_protocol: %s" % site.ssh_protocol
-
             self.sites.append(site)
 
     @classmethod
@@ -178,7 +138,7 @@ class Config(ConfigSection):
     @property
     def basepath(self,):
         return self.__getattr__('basepath')
-    
+
     @basepath.setter
     def basepath(self, value):
         self.config_values['basepath'] = os.path.expandvars(os.path.expanduser(value))
@@ -186,7 +146,7 @@ class Config(ConfigSection):
     @property
     def fuse_mountdir(self,):
         return self.__getattr__('fuse_mountdir')
-    
+
     @fuse_mountdir.setter
     def fuse_mountdir(self, value):
         self.config_values['fuse_mountdir'] = os.path.expandvars(os.path.expanduser(value))
@@ -206,7 +166,7 @@ class Filesystem(object):
         result = p.wait()
         if result == 0:
             return True
-        
+
         return False
 
     def mkmountpoint(self, site):
@@ -219,7 +179,7 @@ class Filesystem(object):
         result = p.wait()
         if result == 0:
             return True
-        
+
         return False
 
 class Site(ConfigSection, gobject.GObject):
@@ -237,7 +197,7 @@ class Site(ConfigSection, gobject.GObject):
     config_values = {
         'type': 'sshfs',
         'remote_basepath': '/',
-        'timeout': 60 #in seconds
+        'timeout': 600 #in seconds
     }
 
     timer = None
@@ -263,24 +223,12 @@ class Site(ConfigSection, gobject.GObject):
         if self.timer:
             self.timer.cancel()
         if self.logger: self.logger.error('Setting timer with timeout: %s' % self.timeout)
-        self.timer = Timer(self.timeout, self.timed_out)
+        self.timer = threading.Timer(self.timeout, self.timed_out)
         self.timer.start()
 
     def timed_out(self):
         if self.logger: self.logger.error('Unmounting %s due to timeout' % self.name)
         self.unmount()
-
-    # def get_filesystem(self):
-    #   module = self.type
-    #   cls = module[:1].upper() + module[1:]
-
-    #   __import__('fusegui.filesystems.' + module)
-    #   filesystem = getattr(getattr(filesystems, module), cls)()
-        
-    #   filesystem.set_config_parent(self.config_parent)
-    #   for k,v in self.config.config.items('Filesystem %s' % cls.lower()):
-    #       filesystem.set(k, v)
-    #   return filesystem
 
     @property
     def filesystem(self):
@@ -304,7 +252,7 @@ class Site(ConfigSection, gobject.GObject):
         if not host:
             host = self.name
         return host
-        
+
     @host.setter
     def host(self, value):
         """A getter always needs a setter (or else it will be readonly)"""
@@ -387,24 +335,269 @@ class Logger(object):
     def critical(self, msg, *args, **kwargs):
         return self.logger.critical(msg, *args, **kwargs)
 
-class Director(object):
-    dbus_objects = {}
+class FuseFilesystem(fuse.LoggingMixIn, fuse.Operations):
+    logger = None
+    config = None
 
-    def run(self):
-        if self.logger: self.logger.error('Starting Director')
+    def __init__(self):
+        self.rwlock = threading.Lock()
 
-        config = self.config
-        DBusGMainLoop(set_as_default=True)
+    def _stat_to_dict(self, st):
+        return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
+                    'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
 
-        for site in config.sites:
-            if self.logger: self.logger.error("adding %s to dbus server" % site.name)
-            self.dbus_objects[site.name] = dbusserver.Site(site)
+    def get_real_path(self, path):
+        return self.config.fuse_mountdir + path
 
-        mainloop = gobject.MainLoop()
+    def get_site(self, path):
+        if path[:len(self.config.fuse_mountdir)] != self.config.fuse_mountdir:
+            return
 
-        try:
-            mainloop.run()
-        except KeyboardInterrupt:
-            pass
-        
-        if self.logger: self.logger.error('Stopping mainloop of Director')
+        if path == self.config.fuse_mountdir + os.sep:
+            return None
+
+        site_name = path[len(self.config.fuse_mountdir):]
+        site_name = site_name.lstrip(os.path.sep).split(os.path.sep)[0]
+
+        if self.logger: self.logger.debug('site_name: %s' % site_name)
+        for site in self.config.sites:
+            if site.name == site_name:
+                return site
+
+
+    ### Start filesystem methodss ###
+
+    def getattr(self, path, fh=None):
+        if self.logger: self.logger.error("getattr: %s" % path)
+        path = self.get_real_path(path)
+        if self.logger: self.logger.error('path: %s' % path)
+        site = self.get_site(path)
+
+        if not site:
+            if self.logger: self.logger.debug('getattr: no site found for %s' % path)
+            return self._stat_to_dict(os.lstat(path))
+        else:
+            if site and not site.ismounted and path == site.basepath:
+                if not os.path.isdir(site.basepath):
+                    os.mkdir(site.basepath)
+                return self._stat_to_dict(os.lstat(path))
+            elif site and not site.ismounted:
+                if self.logger: self.logger.error("Trying to mount %s" % site.basepath)
+                p = site.mount()
+                if self.logger: self.logger.error('p: %s' % p)
+            else:
+                self.logger.debug('getattr: site already mounted')
+
+            site.update_accesstime()
+            return self._stat_to_dict(os.lstat(path))
+
+    def readlink(self, path):
+        if self.logger: self.logger.error("readlink: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        return os.readlink(path)
+
+    def open(self, path, flags):
+        if self.logger: self.logger.error("open: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        return os.open(path, flags)
+
+    def read(self, path, size, offset, fh):
+        if self.logger: self.logger.error("read: %s" % path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+
+        with self.rwlock:
+            os.lseek(fh, offset, 0)
+            return os.read(fh, size)
+
+    def readdir(self, path, offset):
+        if self.logger: self.logger.error("readdir: %s" % path)
+
+        # If not a subdirector: return all sitenames as directory
+        if path == '/':
+            return ['.', '..'] + map(lambda x: x.name, self.config.sites)
+
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if self.logger: self.logger.error("site: %s" % site)
+        if site and not site.ismounted:
+            site.mount()
+
+        if self.logger: self.logger.error("site.basepath: %s" % site.basepath)
+        for e in os.listdir(site.basepath):
+            self.logger.error('listdir e: %s' % e)
+            return os.listdir(path)
+
+    def unlink(self, path):
+        if self.logger: self.logger.error("unlink: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        os.unlink(path)
+
+    def rmdir(self, path):
+        if self.logger: self.logger.error("rmdir: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        os.rmdir(path)
+
+    def symlink(self, path1, path2):
+        if self.logger: self.logger.debug("symlink: %s, %s" % (path1, path2))
+        path1 = self.get_real_path(path1)
+        site1 = self.get_site(path1)
+        if site1: site1.update_accesstime()
+        path2 = self.get_real_path(path2)
+        site2 = self.get_site(path2)
+        if site2: site2.update_accesstime()
+        os.symlink(path1, path2)
+
+    def rename(self, path1, path2):
+        if self.logger: self.logger.debug("rename: %s, %s" % (path1, path2))
+        path1 = self.get_real_path(path1)
+        site1 = self.get_site(path1)
+        if site1: site1.update_accesstime()
+        path2 = self.get_real_path(path2)
+        site2 = self.get_site(path2)
+        if site2: site2.update_accesstime()
+        os.rename(path1, path2)
+
+    def link(self, path1, path2):
+        if self.logger: self.logger.debug("link: %s, %s" % (path1, path2))
+        path1 = self.get_real_path(path1)
+        site1 = self.get_site(path1)
+        if site1: site1.update_accesstime()
+        path2 = self.get_real_path(path2)
+        site2 = self.get_site(path2)
+        if site2: site2.update_accesstime()
+        os.link(path1, "." + path2)
+
+    def chmod(self, path, mode):
+        if self.logger: self.logger.debug("chmod: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        os.chmod(path, mode)
+
+    def chown(self, path, user, group):
+        if self.logger: self.logger.error("chown: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        os.chown(path, user, group)
+
+    def truncate(self, path, len):
+        if self.logger: self.logger.debug("truncate: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        f = open(path, "a")
+        f.truncate(len)
+        f.close()
+
+    def mknod(self, path, mode, dev):
+        if self.logger: self.logger.debug("mknod: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        os.mknod(path, mode, dev)
+
+    def mkdir(self, path, mode):
+        if self.logger: self.logger.debug("mkdir: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        os.mkdir(path, mode)
+
+    def utime(self, path, times):
+        if self.logger: self.logger.debug("utime: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        os.utime(path, times)
+
+    def access(self, path, mode):
+        if self.logger: self.logger.debug("access: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+
+        if not os.access(path, mode):
+            return -errno.EACCES
+
+    #def create(self, path, mode, fip):
+    def create(self, path, mode):
+        if self.logger: self.logger.debug("create: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+        return os.open(path, os.O_WRONLY | os.O_CREAT, mode)
+
+    def write(self, path, data, offset, fh):
+        if self.logger: self.logger.debug("write: %s" % path)
+        path = self.get_real_path(path)
+        site = self.get_site(path)
+        if site: site.update_accesstime()
+
+        with self.rwlock:
+            os.lseek(fh, offset, 0)
+            return os.write(fh, data)
+
+#    This is how we could add stub extended attribute handlers...
+#    (We can't have ones which aptly delegate requests to the underlying fs
+#    because Python lacks a standard xattr interface.)
+#
+#    def getxattr(self, path, name, size):
+#        val = name.swapcase() + '@' + path
+#        if size == 0:
+#            # We are asked for size of the value.
+#            return len(val)
+#        return val
+#
+#    def listxattr(self, path, size):
+#        # We use the "user" namespace to please XFS utils
+#        aa = ["user." + a for a in ("foo", "bar")]
+#        if size == 0:
+#            # We are asked for size of the attr list, ie. joint size of attrs
+#            # plus null separators.
+#            return len("".join(aa)) + len(aa)
+#        return aa
+
+    def statfs(self, path):
+        """
+        Should return an object with statvfs attributes (f_bsize, f_frsize...).
+        Eg., the return value of os.statvfs() is such a thing (since py 2.2).
+        If you are not reusing an existing statvfs object, start with
+        fuse.StatVFS(), and define the attributes.
+
+        To provide usable information (ie., you want sensible df(1)
+        output, you are suggested to specify the following attributes:
+
+            - f_bsize - preferred size of file blocks, in bytes
+            - f_frsize - fundamental size of file blcoks, in bytes
+                [if you have no idea, use the same as blocksize]
+            - f_blocks - total number of blocks in the filesystem
+          - f_bfree - number of free blocks
+            - f_files - total number of file inodes
+            - f_ffree - nunber of free file inodes
+        """
+
+        # This really doesn't do anything, it stats self.config.fuse_mountdir
+        if self.logger: self.logger.debug("statfs: %s" % path)
+        stv = os.statvfs(path)
+
+        return dict((key, getattr(stv, key)) for key in ('f_bavail', 'f_bfree',
+            'f_blocks', 'f_bsize', 'f_favail', 'f_ffree', 'f_files', 'f_flag',
+            'f_frsize', 'f_namemax'))
+
+    def __del__(self):
+        if self.logger: self.logger.error("__del__")
+        # Check every site and unmount it if needed
+        for site in self.config.sites:
+            if self.logger: self.logger.error('%s mounted: %s' % (site.name, site.ismounted))
+            if site.ismounted:
+                site.unmount()
